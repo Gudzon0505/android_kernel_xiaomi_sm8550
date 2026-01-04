@@ -1,15 +1,4 @@
-- name: Install deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            bc bison flex git make \
-            clang llvm lld \
-            libelf-dev libssl-dev \
-            python3 perl \
-            zstd cpio rsync \
-            dwarves
-
-name: Build kernel (vermeer GKI, Lineage 23)
+name: Build vermeer kernel (GKI, Lineage 23)
 
 on:
   workflow_dispatch:
@@ -20,101 +9,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
-
-    steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Install deps
-        run: |
-          set -eux
-          sudo apt-get update
-          sudo apt-get install -y \
-            bc bison build-essential ccache flex git libssl-dev \
-            libelf-dev dwarves pahole \
-            python3 rsync unzip zip zstd \
-            clang lld llvm
-
-          echo "== toolchain check =="
-          which clang
-          clang --version
-          which ld.lld || true
-          ls -la /usr/bin/ld.lld* || true
-
-          # fallback if ld.lld is versioned
-          if ! command -v ld.lld >/dev/null; then
-            sudo ln -sf /usr/bin/ld.lld-* /usr/bin/ld.lld || true
-          fi
-
-          which ld.lld
-          ld.lld --version
-
-      - name: Configure (gki_defconfig + vermeer_GKI.config)
-        run: |
-          set -eux
-
-          export ARCH=arm64
-          export SUBARCH=arm64
-          export LLVM=1
-          export LLVM_IAS=1
-
-          # IMPORTANT: clean SOURCE tree, not O=out
-          make mrproper
-
-          rm -rf out
-          mkdir -p out
-
-          make O=out gki_defconfig
-
-          ./scripts/kconfig/merge_config.sh -m -r \
-            out/.config arch/arm64/configs/vendor/vermeer_GKI.config
-
-          make O=out olddefconfig
-
-          echo "==== sanity config flags ===="
-          grep -E "CONFIG_LOCALVERSION|CONFIG_LTO|CONFIG_CFI|CONFIG_KASAN|CONFIG_DEBUG_INFO" out/.config || true
-
-      - name: Build kernel
-        run: |
-          set -eux
-
-          export ARCH=arm64
-          export SUBARCH=arm64
-          export LLVM=1
-          export LLVM_IAS=1
-
-          make -j$(nproc) O=out
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: vermeer-kernel
-          path: |
-            out/arch/arm64/boot/Image
-            out/.configс- name: Install deps
-        run: |
-          set -eux
-          sudo apt-get update
-          sudo apt-get install -y \
-            bc bison build-essential ccache flex git libssl-dev \
-            libelf-dev dwarves pahole \
-            python3 rsync unzip zip zstd \
-            clang lld llvm
-          which clang
-          which ld.lld
-          ld.lld --version
-
--name: Build kernel (vermeer GKI, Lineage 23)
-
-on:
-  workflow_dispatch:
-
-jobs:
-  build:
-    runs-on: ubuntu-22.04
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -123,11 +17,18 @@ jobs:
 
       - name: Install deps
         run: |
+          set -eux
           sudo apt-get update
           sudo apt-get install -y \
-            bc bison build-essential ccache flex git \
-            libelf-dev libssl-dev dwarves \
-            python3 rsync unzip zip
+            bc bison flex build-essential \
+            clang lld llvm \
+            libssl-dev libelf-dev \
+            dwarves \
+            python3 python3-pip \
+            rsync git zip unzip \
+            ccache
+          which clang
+          which ld.lld
 
       - name: Configure (gki_defconfig + vermeer_GKI.config)
         run: |
@@ -147,9 +48,7 @@ jobs:
             out/.config arch/arm64/configs/vendor/vermeer_GKI.config
 
           make O=out olddefconfig
-
-          # sanity: show key flags
-          grep -E "CONFIG_LOCALVERSION|CONFIG_LTO|CONFIG_CFI|CONFIG_KASAN|CONFIG_DEBUG_INFO" out/.config || true
+          grep -E "CONFIG_LOCALVERSION|CONFIG_LTO|CONFIG_CFI" out/.config || true
 
       - name: Build
         run: |
@@ -159,12 +58,20 @@ jobs:
           export LLVM=1
           export LLVM_IAS=1
 
-          make O=out -j"$(nproc)"
+          make -j"$(nproc)" O=out Image Image.gz
+
+          if make -n O=out dtbo.img >/dev/null 2>&1; then
+            make -j"$(nproc)" O=out dtbo.img
+          fi
+
+          mkdir -p artifacts
+          cp -v out/arch/arm64/boot/Image artifacts/ || true
+          cp -v out/arch/arm64/boot/Image.gz artifacts/ || true
+          cp -v out/arch/arm64/boot/dtbo.img artifacts/ || true
+          cp -v out/.config artifacts/config || true
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: vermeer-kernel-out
-          path: |
-            out/arch/arm64/boot/Image
-            out/.config
+          name: vermeer-kernel-${{ github.sha }}
+          path: artifacts/*
