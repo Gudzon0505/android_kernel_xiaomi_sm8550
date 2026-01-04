@@ -38,17 +38,26 @@ jobs:
           export LLVM=1
           export LLVM_IAS=1
 
-          OUT="${RUNNER_TEMP}/out"
+          SRC="$GITHUB_WORKSPACE"
+          OUT="$RUNNER_TEMP/out"
           rm -rf "$OUT"
           mkdir -p "$OUT"
 
-          make O="$OUT" mrproper
-          make O="$OUT" gki_defconfig
+          # Clean output + ensure srctree has no stray .config
+          rm -f "$SRC/.config" "$SRC/.config.old" "$SRC/.config.*" || true
 
-          ./scripts/kconfig/merge_config.sh -m -r \
-            "$OUT/.config" arch/arm64/configs/vendor/vermeer_GKI.config
+          make -C "$SRC" O="$OUT" mrproper
+          make -C "$SRC" O="$OUT" gki_defconfig
 
-          make O="$OUT" olddefconfig
+          # Run merge_config from OUT so it writes .config into OUT (not srctree)
+          cd "$OUT"
+          "$SRC/scripts/kconfig/merge_config.sh" -m -r \
+            "$OUT/.config" "$SRC/arch/arm64/configs/vendor/vermeer_GKI.config"
+
+          # Safety: fail fast if merge_config polluted srctree
+          test ! -f "$SRC/.config"
+
+          make -C "$SRC" O="$OUT" olddefconfig
           grep -E "CONFIG_LOCALVERSION|CONFIG_LTO|CONFIG_CFI" "$OUT/.config" || true
 
       - name: Build
@@ -59,11 +68,13 @@ jobs:
           export LLVM=1
           export LLVM_IAS=1
 
-          OUT="${RUNNER_TEMP}/out"
-          make -j"$(nproc)" O="$OUT" Image Image.gz
+          SRC="$GITHUB_WORKSPACE"
+          OUT="$RUNNER_TEMP/out"
 
-          if make -n O="$OUT" dtbo.img >/dev/null 2>&1; then
-            make -j"$(nproc)" O="$OUT" dtbo.img
+          make -C "$SRC" -j"$(nproc)" O="$OUT" Image Image.gz
+
+          if make -n -C "$SRC" O="$OUT" dtbo.img >/dev/null 2>&1; then
+            make -C "$SRC" -j"$(nproc)" O="$OUT" dtbo.img
           fi
 
           mkdir -p artifacts
