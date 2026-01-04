@@ -1,0 +1,62 @@
+name: Build kernel (vermeer GKI, Lineage 23)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison build-essential ccache flex git \
+            libelf-dev libssl-dev dwarves \
+            python3 rsync unzip zip
+
+      - name: Configure (gki_defconfig + vermeer_GKI.config)
+        run: |
+          set -eux
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export LLVM=1
+          export LLVM_IAS=1
+
+          rm -rf out
+          mkdir -p out
+
+          make O=out mrproper
+          make O=out gki_defconfig
+
+          ./scripts/kconfig/merge_config.sh -m -r \
+            out/.config arch/arm64/configs/vendor/vermeer_GKI.config
+
+          make O=out olddefconfig
+
+          # sanity: show key flags
+          grep -E "CONFIG_LOCALVERSION|CONFIG_LTO|CONFIG_CFI|CONFIG_KASAN|CONFIG_DEBUG_INFO" out/.config || true
+
+      - name: Build
+        run: |
+          set -eux
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export LLVM=1
+          export LLVM_IAS=1
+
+          make O=out -j"$(nproc)"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: vermeer-kernel-out
+          path: |
+            out/arch/arm64/boot/Image
+            out/.config
