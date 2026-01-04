@@ -38,17 +38,18 @@ jobs:
           export LLVM=1
           export LLVM_IAS=1
 
-          rm -rf out
-          mkdir -p out
+          OUT="${RUNNER_TEMP}/out"
+          rm -rf "$OUT"
+          mkdir -p "$OUT"
 
-          make O=out mrproper
-          make O=out gki_defconfig
+          make O="$OUT" mrproper
+          make O="$OUT" gki_defconfig
 
           ./scripts/kconfig/merge_config.sh -m -r \
-            out/.config arch/arm64/configs/vendor/vermeer_GKI.config
+            "$OUT/.config" arch/arm64/configs/vendor/vermeer_GKI.config
 
-          make O=out olddefconfig
-          grep -E "CONFIG_LOCALVERSION|CONFIG_LTO|CONFIG_CFI" out/.config || true
+          make O="$OUT" olddefconfig
+          grep -E "CONFIG_LOCALVERSION|CONFIG_LTO|CONFIG_CFI" "$OUT/.config" || true
 
       - name: Build
         run: |
@@ -58,17 +59,18 @@ jobs:
           export LLVM=1
           export LLVM_IAS=1
 
-          make -j"$(nproc)" O=out Image Image.gz
+          OUT="${RUNNER_TEMP}/out"
+          make -j"$(nproc)" O="$OUT" Image Image.gz
 
-          if make -n O=out dtbo.img >/dev/null 2>&1; then
-            make -j"$(nproc)" O=out dtbo.img
+          if make -n O="$OUT" dtbo.img >/dev/null 2>&1; then
+            make -j"$(nproc)" O="$OUT" dtbo.img
           fi
 
           mkdir -p artifacts
-          cp -v out/arch/arm64/boot/Image artifacts/ || true
-          cp -v out/arch/arm64/boot/Image.gz artifacts/ || true
-          cp -v out/arch/arm64/boot/dtbo.img artifacts/ || true
-          cp -v out/.config artifacts/config || true
+          cp -v "$OUT/arch/arm64/boot/Image" artifacts/ || true
+          cp -v "$OUT/arch/arm64/boot/Image.gz" artifacts/ || true
+          cp -v "$OUT/arch/arm64/boot/dtbo.img" artifacts/ || true
+          cp -v "$OUT/.config" artifacts/config || true
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
