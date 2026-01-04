@@ -1,4 +1,112 @@
+- name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison flex git make \
+            clang llvm lld \
+            libelf-dev libssl-dev \
+            python3 perl \
+            zstd cpio rsync \
+            dwarves
+
 name: Build kernel (vermeer GKI, Lineage 23)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - lineage-23.0
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install deps
+        run: |
+          set -eux
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison build-essential ccache flex git libssl-dev \
+            libelf-dev dwarves pahole \
+            python3 rsync unzip zip zstd \
+            clang lld llvm
+
+          echo "== toolchain check =="
+          which clang
+          clang --version
+          which ld.lld || true
+          ls -la /usr/bin/ld.lld* || true
+
+          # fallback if ld.lld is versioned
+          if ! command -v ld.lld >/dev/null; then
+            sudo ln -sf /usr/bin/ld.lld-* /usr/bin/ld.lld || true
+          fi
+
+          which ld.lld
+          ld.lld --version
+
+      - name: Configure (gki_defconfig + vermeer_GKI.config)
+        run: |
+          set -eux
+
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export LLVM=1
+          export LLVM_IAS=1
+
+          # IMPORTANT: clean SOURCE tree, not O=out
+          make mrproper
+
+          rm -rf out
+          mkdir -p out
+
+          make O=out gki_defconfig
+
+          ./scripts/kconfig/merge_config.sh -m -r \
+            out/.config arch/arm64/configs/vendor/vermeer_GKI.config
+
+          make O=out olddefconfig
+
+          echo "==== sanity config flags ===="
+          grep -E "CONFIG_LOCALVERSION|CONFIG_LTO|CONFIG_CFI|CONFIG_KASAN|CONFIG_DEBUG_INFO" out/.config || true
+
+      - name: Build kernel
+        run: |
+          set -eux
+
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export LLVM=1
+          export LLVM_IAS=1
+
+          make -j$(nproc) O=out
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: vermeer-kernel
+          path: |
+            out/arch/arm64/boot/Image
+            out/.configс- name: Install deps
+        run: |
+          set -eux
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison build-essential ccache flex git libssl-dev \
+            libelf-dev dwarves pahole \
+            python3 rsync unzip zip zstd \
+            clang lld llvm
+          which clang
+          which ld.lld
+          ld.lld --version
+
+-name: Build kernel (vermeer GKI, Lineage 23)
 
 on:
   workflow_dispatch:
